@@ -1,8 +1,5 @@
 <?php
 
-/**
- * Model berita: relasi kategori/komentar, pencarian, dan pemetaan slug untuk URL.
- */
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -12,14 +9,18 @@ class Berita extends Model
     protected $table = 'berita';
 
     protected $fillable = [
-        'kategori_id', 'judul', 'slug', 'penulis', 'ringkasan',
-        'isi', 'gambar', 'tags', 'views', 'tanggal',
+        'user_id', 'kategori_id', 'judul', 'slug', 'penulis', 'ringkasan',
+        'isi', 'gambar', 'tags', 'views', 'tanggal', // ← tambahkan 'tags' disini
     ];
 
     protected $casts = [
-        'tags' => 'array',
         'tanggal' => 'date',
     ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 
     public function kategori()
     {
@@ -29,6 +30,11 @@ class Berita extends Model
     public function komentar()
     {
         return $this->hasMany(Komentar::class);
+    }
+
+    public function tags()
+    {
+        return $this->belongsToMany(Tag::class, 'berita_tag');
     }
 
     public function getRouteKeyName()

@@ -137,6 +137,179 @@ Kelima bagian bekerja berurutan: **Route menerima URL dan memilih Controller; Co
 
 Folder `vendor/`, cache bootstrap, hasil build, dan file di `storage/` merupakan dependency atau keluaran runtime yang dikelola framework, bukan kode fitur berita yang perlu dijelaskan satu per satu.
 
+---
+
+## Sebelum vs Sesudah Ada Relasi
+
+Bagian ini menjelaskan bagaimana kode berubah — dan mengapa — ketika fitur relasi antar tabel ditambahkan satu per satu ke dalam proyek.
+
+### 1. Relasi Berita ↔ Kategori (One-to-Many)
+
+#### Sebelum
+
+Tidak ada kolom `kategori_id` di tabel `berita`. Setiap artikel berdiri sendiri, tanpa pengelompokan. Jika ingin menampilkan nama kategori, satu-satunya cara adalah menyimpannya sebagai teks biasa langsung di kolom artikel — artinya tidak konsisten, susah difilter, dan tidak bisa diubah secara massal.
+
+#### Sesudah
+
+Migration [`create_kategoris_table`](./database/migrations/2026_10_05_022656_create_kategoris_table.php) membuat tabel `kategori`, lalu migration [`create_beritas_table`](./database/migrations/2026_10_05_022657_create_beritas_table.php) menambahkan kolom `kategori_id` sebagai foreign key.
+
+Model [`Berita`](./app/Models/Berita.php) mendapatkan method:
+```php
+public function kategori() {
+    return $this->belongsTo(Kategori::class);
+}
+```
+Model [`Kategori`](./app/Models/Kategori.php) mendapatkan kebalikannya:
+```php
+public function berita() {
+    return $this->hasMany(Berita::class);
+}
+```
+
+Di controller, berita dimuat bersama kategorinya sekaligus agar tidak terjadi N+1 query:
+```php
+Berita::with(['kategori', 'tags'])->...
+```
+
+Di view [`index.blade.php`](./resources/views/berita/index.blade.php), nama kategori bisa langsung ditampilkan:
+```blade
+{{ $b->kategori->nama }}
+```
+
+Dan di sidebar filter, daftar kategori diambil terpisah lalu di-loop jadi pilihan dropdown.
+
+**Efeknya di browser:** muncul badge kategori di setiap kartu berita dan dropdown filter kategori yang benar-benar berfungsi menyaring artikel.
+
+---
+
+### 2. Relasi Berita ↔ Komentar (One-to-Many)
+
+#### Sebelum
+
+Tidak ada tabel komentar sama sekali. Pengunjung tidak bisa memberikan respons atau feedback terhadap berita yang mereka baca.
+
+#### Sesudah
+
+Migration [`create_komentars_table`](./database/migrations/2026_10_05_030920_create_komentars_table.php) membuat tabel `komentar` dengan foreign key `berita_id`. Jika berita dihapus, semua komentarnya ikut terhapus otomatis (`cascadeOnDelete`).
+
+Model [`Berita`](./app/Models/Berita.php) mendapat:
+```php
+public function komentar() {
+    return $this->hasMany(Komentar::class);
+}
+```
+Model [`Komentar`](./app/Models/Komentar.php) mendapat:
+```php
+public function berita() {
+    return $this->belongsTo(Berita::class);
+}
+```
+
+Di controller `show`, komentar diambil lewat relasi:
+```php
+$komentar = $berita->komentar()->latest()->get();
+```
+
+Saat pengunjung submit form komentar, controller menyimpannya lewat relasi juga — bukan query manual — sehingga `berita_id` terisi otomatis:
+```php
+$berita->komentar()->create([...]);
+```
+
+**Efeknya di browser:** muncul seksi komentar di halaman detail berita, lengkap dengan form isi nama/email/pesan, captcha, dan daftar komentar yang sudah terkirim sebelumnya.
+
+---
+
+### 3. Relasi Berita ↔ Tag (Many-to-Many)
+
+#### Sebelum
+
+Kolom `tags` di tabel `berita` bertipe JSON. Artinya tag disimpan sebagai array teks mentah di dalam satu kolom, misalnya `["olahraga", "desa"]`. Cara ini punya banyak kelemahan: tidak bisa di-query dengan efisien, tidak ada validasi konsistensi nama tag, dan satu tag tidak bisa dihubungkan ke banyak berita dengan cara yang proper.
+
+#### Sesudah
+
+Tiga hal berubah sekaligus:
+
+1. **Migration [`hapus_kolom_tags_dari_berita`](./database/migrations/2026_10_19_055900_hapus_kolom_tags_dari_berita.php)** — kolom `tags` JSON di tabel `berita` dihapus.
+2. **Migration [`create_tags_table`](./database/migrations/2026_10_19_055545_create_tags_table.php)** — dibuat tabel `tags` dengan kolom `nama` yang unik.
+3. **Migration [`create_berita_tag_table`](./database/migrations/2026_10_19_055548_create_berita_tag_table.php)** — dibuat tabel pivot `berita_tag` dengan dua foreign key (`berita_id` dan `tag_id`). Satu pasang kombinasi tidak bisa duplikat.
+
+Model [`Berita`](./app/Models/Berita.php) mendapat:
+```php
+public function tags() {
+    return $this->belongsToMany(Tag::class, 'berita_tag');
+}
+```
+Model [`Tag`](./app/Models/Tag.php) mendapat kebalikannya:
+```php
+public function beritas() {
+    return $this->belongsToMany(Berita::class, 'berita_tag');
+}
+```
+
+Ketika berita disimpan atau diperbarui, tag disinkronkan lewat `sync()` — method ini otomatis menambah/menghapus baris di tabel pivot sesuai pilihan user:
+```php
+$berita->tags()->sync($data['tags'] ?? []);
+```
+
+Di view, tag diloop langsung dari relasi:
+```blade
+@foreach ($b->tags as $tag)
+    <span class="tag-pill">#{{ $tag->nama }}</span>
+@endforeach
+```
+
+**Efeknya di browser:** setiap kartu berita di halaman daftar menampilkan pill tag (misal `#olahraga`, `#desa`), dan di halaman detail muncul bagian "Tags:" dengan daftar tag yang dikaitkan ke artikel tersebut.
+
+---
+
+### 4. Relasi Berita ↔ User (Many-to-One / belongsTo)
+
+#### Sebelum
+
+Kolom `penulis` di tabel `berita` hanya teks biasa. Siapa pun bisa mengetik nama apa saja saat membuat berita. Tidak ada hubungan ke akun login, tidak ada cara untuk tahu berita mana yang dibuat oleh user mana.
+
+#### Sesudah
+
+Migration [`tambah_user_id_pada_berita`](./database/migrations/2026_10_23_034126_tambah_user_id_pada_berita.php) menambahkan kolom `user_id` sebagai foreign key ke tabel `users`.
+
+Model [`Berita`](./app/Models/Berita.php) mendapat:
+```php
+public function user() {
+    return $this->belongsTo(User::class);
+}
+```
+
+Saat menyimpan berita baru, `user_id` diisi otomatis dari sesi login:
+```php
+$request->user()->beritas()->create(...);
+```
+
+Di controller `edit` dan `update`, ada pengecekan agar hanya pemilik berita atau admin yang bisa mengedit:
+```php
+if (auth()->id() !== $berita->user_id && !auth()->user()->isAdmin()) {
+    abort(403);
+}
+```
+
+Di view detail [`show.blade.php`](./resources/views/berita/show.blade.php), nama penulis diambil dari relasi user:
+```blade
+{{ $berita->user->name ?? $berita->penulis }}
+```
+Jika `user` tidak ada (data lama sebelum relasi ditambah), fallback ke kolom `penulis`.
+
+**Efeknya di browser:** nama penulis di halaman detail menampilkan nama akun yang login saat menulis, bukan teks bebas. Tombol Edit dan Hapus juga hanya muncul untuk pemilik berita atau admin.
+
+---
+
+### Ringkasan Perubahan
+
+| Relasi | Tipe | Tabel Pivot | Perubahan Utama |
+|---|---|---|---|
+| Berita → Kategori | `belongsTo` / `hasMany` | — | Kolom `kategori_id` di `berita`, filter dropdown |
+| Berita → Komentar | `hasMany` / `belongsTo` | — | Tabel `komentar` baru, form & seksi komentar |
+| Berita ↔ Tag | `belongsToMany` | `berita_tag` | Kolom JSON dihapus, tabel `tags` + pivot, `sync()` |
+| Berita → User | `belongsTo` | — | Kolom `user_id` di `berita`, kontrol akses edit/hapus |
+
 ## Perintah yang sering digunakan
 
 ```bash

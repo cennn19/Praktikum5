@@ -113,29 +113,53 @@
 
         {{-- Artikel --}}
         <article class="card-berita mb-4">
-            <img class="detail-img" src="{{ asset($berita->gambar) }}" alt="{{ $berita->judul }}">
+            <img class="detail-img"
+                 src="{{ Storage::url($berita->gambar) }}"
+                 alt="{{ $berita->judul }}"
+                 onerror="this.src='https://placehold.co/900x400?text=No+Image'">
 
             <div class="p-4">
                 <div class="detail-meta d-flex flex-wrap align-items-center gap-3">
                     <span class="badge badge-kategori">{{ $berita->kategori->nama }}</span>
                     <span><i class="bi bi-calendar3"></i>{{ $berita->tanggal->translatedFormat('l, d F Y') }}</span>
-                    <span><i class="bi bi-person-fill"></i>{{ $berita->penulis }}</span>
+                   <span><i class="bi bi-person-fill"></i>{{ $berita->user->name ?? $berita->penulis }}</span>
                     <span><i class="bi bi-eye-fill"></i>{{ $berita->views }} dibaca</span>
                 </div>
 
                 <h1 class="detail-title">{{ $berita->judul }}</h1>
+
+                {{-- Tombol Edit & Hapus --}}
+                @auth
+                    @if (auth()->id() === $berita->user_id || auth()->user()->isAdmin())
+                        <div class="d-flex gap-2 mb-3">
+                            <a href="{{ route('berita.edit', $berita) }}" class="btn btn-sm btn-outline-warning">
+                                <i class="bi bi-pencil"></i> Edit
+                            </a>
+                            @if (auth()->user()->isAdmin())
+                                <form action="{{ route('berita.destroy', $berita) }}" method="POST"
+                                      onsubmit="return confirm('Yakin hapus berita ini?')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-trash"></i> Hapus
+                                    </button>
+                                </form>
+                            @endif
+                        </div>
+                    @endif
+                @endauth
 
                 <div class="detail-isi">
                     {!! nl2br(e($berita->isi)) !!}
                 </div>
 
                 {{-- Tags --}}
-                @if (!empty($berita->tags))
+                @if ($berita->tags->isNotEmpty())
                     <hr class="my-4">
                     <div>
                         <strong class="me-2"><i class="bi bi-tags-fill"></i> Tags:</strong>
                         @foreach ($berita->tags as $tag)
-                            <span class="tag-outline">#{{ $tag }}</span>
+                            <span class="tag-outline">#{{ $tag->nama }}</span>
                         @endforeach
                     </div>
                 @endif
@@ -186,7 +210,7 @@
                 @endif
 
                 <form method="POST" action="{{ route('berita.komentar', $berita) }}">
-
+                    @csrf
 
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
@@ -277,7 +301,9 @@
             <div class="px-3">
                 @forelse ($terkait as $r)
                     <a href="{{ route('berita.show', $r) }}" class="terkait-item">
-                        <img src="{{ asset($r->gambar) }}" alt="{{ $r->judul }}">
+                        <img src="{{ Storage::url($r->gambar) }}"
+                             alt="{{ $r->judul }}"
+                             onerror="this.src='https://placehold.co/80x60?text=No+Image'">
                         <div>
                             <div class="terkait-judul">{{ \Illuminate\Support\Str::limit($r->judul, 70) }}</div>
                             <small class="text-muted">

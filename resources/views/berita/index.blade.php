@@ -32,6 +32,14 @@
                     <button type="submit" class="btn btn-primary w-100 mb-2">Cari</button>
                     <a href="{{ route('berita.index') }}" class="btn btn-outline-secondary w-100">Reset</a>
                 </form>
+
+                {{-- Tombol Tambah Berita --}}
+                @auth
+                    <hr>
+                    <a href="{{ route('berita.create') }}" class="btn btn-success w-100">
+                        <i class="bi bi-plus-circle"></i> Tambah Berita
+                    </a>
+                @endauth
             </div>
         </div>
     </div>
@@ -43,7 +51,8 @@
                 <div class="col-md-6 col-xl-4">
                     <div class="card-berita h-100 d-flex flex-column">
 
-                        <img class="thumb" src="{{ asset($b->gambar) }}" alt="{{ $b->judul }}">
+                        <img class="thumb" src="{{ Storage::url($b->gambar) }}" alt="{{ $b->judul }}"
+                             onerror="this.src='https://placehold.co/600x240?text=No+Image'">
 
                         <div class="p-3 d-flex flex-column flex-grow-1">
                             <div class="mb-2">
@@ -58,8 +67,8 @@
                             <p class="text-muted small">{{ \Illuminate\Support\Str::limit($b->ringkasan, 90) }}</p>
 
                             <div class="mb-3">
-                                @foreach ($b->tags ?? [] as $tag)
-                                    <span class="tag-pill">#{{ $tag }}</span>
+                                @foreach ($b->tags as $tag)
+                                    <span class="tag-pill">#{{ $tag->nama }}</span>
                                 @endforeach
                             </div>
 
@@ -69,6 +78,24 @@
                                     Baca <i class="bi bi-arrow-right"></i>
                                 </a>
                             </div>
+
+                            {{-- Tombol Edit & Hapus --}}
+                            @auth
+                                <div class="mt-2 pt-2 border-top d-flex gap-2">
+                                    <a href="{{ route('berita.edit', $b) }}" class="btn btn-sm btn-outline-warning">
+                                        <i class="bi bi-pencil"></i> Edit
+                                    </a>
+                                        <form action="{{ route('berita.destroy', $b) }}" method="POST"
+                                              onsubmit="return confirm('Yakin hapus berita ini?')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                <i class="bi bi-trash"></i> Hapus
+                                            </button>
+                                        </form>
+                                </div>
+                            @endauth
+
                         </div>
 
                     </div>
